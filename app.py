@@ -1,101 +1,124 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import streamlit.components.v1 as components
 
-# Pengaturan Halaman Utama
-st.set_page_config(page_title="Screener Saham Syariah Lengkap", layout="wide", page_icon="📈")
+# 1. Pengaturan Halaman Utama
+st.set_page_config(
+    page_title="Screener & Chart Saham IDX",
+    layout="wide",
+    page_icon="📈"
+)
 
-st.title("📈 Screener Saham IDX (Syariah / All Emiten)")
-st.caption("Pencarian dan kalkulasi Target Price (TP1-TP3) & Stop Loss (SL) untuk seluruh emiten BEI.")
+st.title("📈 Screener & Live Chart Saham IDX")
+st.caption("Aplikasi Analisis Saham Kompleks: Screener TP/SL + Interactive TradingView Chart")
 
-# 1. Daftar Utama Ticker Saham Populer & Lengkap
-# Catatan: yfinance membutuhkan akhiran '.JK' untuk bursa Indonesia
+# 2. Daftar Ticker Saham Populer BEI
 @st.cache_data
 def load_all_tickers():
-    # Daftar ticker komprehensif dari sektor-sektor utama BEI
     base_tickers = [
-        "AALI", "ABDA", "ABMM", "ACES", "ACST", "ADCP", "ADHI", "ADRO", "AGII", "AGRO",
-        "AKRA", "ALDO", "AMRT", "ANJT", "ANTM", "APLN", "ARTO", "ASGR", "ASII", "AUTO",
-        "BABP", "BANK", "BBRM", "BBTN", "BBYB", "BCIC", "BDMN", "BEST", "BFIN", "BIPP",
-        "BIRD", "BISIP", "BKSL", "BLTZ", "BMHS", "BMTR", "BNBR", "BNGA", "BNLI", "BSDE",
-        "BTPS", "BUKA", "BULL", "BUMI", "CASS", "CITA", "CLPI", "CMNP", "CPIN", "CSAP",
-        "CTRA", "DART", "DILD", "DMAS", "DOOID", "DNET", "DVLA", "EAST", "ELSA", "ENRG",
-        "ERAA", "ESSA", "EXCL", "FAST", "FILM", "FORU", "GIAA", "GJTL", "GOOD", "GOTO",
-        "GPSO", "HEAL", "HERO", "HEXA", "HISP", "HMSO", "HRUM", "IATA", "ICBP", "INCF",
-        "INDF", "INKP", "INTP", "IPTV", "IRRA", "ISAT", "ITMG", "JECC", "JSMR", "KBLI",
-        "KBAG", "KDSI", "KIJA", "KKGI", "KLBF", "KMTR", "KPIG", "KRAS", "LPCK", "LPKR",
-        "LPPF", "MAPA", "MAPI", "MBMA", "MDCA", "MEDC", "MIKA", "MNCN", "MPPA", "MSKY",
-        "MTEL", "MYOR", "NCKL", "PALM", "PANR", "PBSD", "PGAS", "PNBN", "PNLF", "PTBA",
-        "PTPP", "PWON", "RALS", "RANC", "ROTI", "SAME", "SCMA", "SIDO", "SILO", "SIMP",
-        "SMAA", "SMBR", "SMSM", "SRTG", "SSMS", "TAPG", "TBIG", "TINS", "TKIM", "TLKM",
-        "TOWR", "TPIA", "UANG", "UNTR", "UNVR", "WEGE", "WIFI", "WIKA", "WOOD", "YPAS"
+        "TLKM", "ICBP", "ADRO", "KLBF", "UNVR", "ASII", "ANTM", "BRIS", 
+        "BBCA", "BBRI", "BMRI", "BBNI", "GOTO", "AMMN", "BREN", "CUAN",
+        "PTBA", "ITMG", "PGAS", "HRUM", "EXCL", "ISAT", "BSDE", "CTRA",
+        "MYOR", "SIDO", "AMRT", "CPIN", "INDF", "INKP", "TPIA", "UNTR"
     ]
     return sorted(list(set(base_tickers)))
 
 all_tickers_raw = load_all_tickers()
 
 # --- SIDEBAR PENGATURAN ---
-st.sidebar.header("🔍 Opsi Pencarian Saham")
+st.sidebar.header("🔍 Opsi Screener & Chart")
 
-# Mode Pencarian
-search_type = st.sidebar.radio("Metode Pilih Saham:", ["Pilih dari Daftar", "Ketik Kode Saham Sendiri"])
+# Pilihan Saham Interaktif
+selected_tickers = st.sidebar.multiselect(
+    "Pilih Kode Saham untuk Screener:",
+    options=all_tickers_raw,
+    default=["TLKM", "ICBP", "ADRO", "KLBF", "UNVR"]
+)
 
-selected_tickers = []
+# Pilihan Saham Khusus yang Ingin Ditampilkan Chart-nya
+st.sidebar.markdown("---")
+st.sidebar.header("📊 Tampilan Interactive Chart")
+active_chart_stock = st.sidebar.selectbox(
+    "Pilih 1 Saham untuk Dilihat Chart-nya:",
+    options=all_tickers_raw,
+    index=0
+)
 
-if search_type == "Pilih dari Daftar":
-    selected_tickers = st.sidebar.multiselect(
-        "Pilih/Cari Kode Saham (Ketik untuk mencari):",
-        options=all_tickers_raw,
-        default=["TLKM", "ICBP", "ADRO", "KLBF", "UNVR"]
-    )
-else:
-    custom_input = st.sidebar.text_input("Masukkan Kode Saham (Pisahkan dengan koma):", "TLKM, ICBP, ADRO")
-    if custom_input:
-        selected_tickers = [x.strip().upper() for x in custom_input.split(",") if x.strip()]
-
-# Tombol Eksekusi Screener
-run_button = st.sidebar.button("🚀 Jalankan Screener", use_container_width=True)
-
-# --- PROSES KALKULASI DEPAN ---
-if run_button or selected_tickers:
-    if not selected_tickers:
-        st.warning("Silakan pilih atau ketik minimal satu kode saham.")
-    else:
-        with st.spinner("Mengambil data harga terkini dari BEI..."):
-            results = []
-            
-            for symbol in selected_tickers:
-                ticker_formatted = f"{symbol}.JK" if not symbol.endswith(".JK") else symbol
-                try:
-                    stock = yf.Ticker(ticker_formatted)
-                    df = stock.history(period="1mo")
+# --- PROSES TABEL SCREENER ---
+if selected_tickers:
+    with st.spinner("Mengkalkulasi data screener..."):
+        results = []
+        for symbol in selected_tickers:
+            ticker_formatted = f"{symbol}.JK"
+            try:
+                stock = yf.Ticker(ticker_formatted)
+                df = stock.history(period="1mo")
+                
+                if not df.empty and len(df) > 1:
+                    last_price = round(df['Close'].iloc[-1])
+                    high_price = df['High'].max()
+                    low_price = df['Low'].min()
                     
-                    if not df.empty and len(df) > 1:
-                        last_price = round(df['Close'].iloc[-1])
-                        high_price = df['High'].max()
-                        low_price = df['Low'].min()
-                        
-                        price_range = high_price - low_price
-                        
-                        sl = round(last_price - (price_range * 0.15))
-                        tp1 = round(last_price + (price_range * 0.15))
-                        tp2 = round(last_price + (price_range * 0.30))
-                        tp3 = round(last_price + (price_range * 0.45))
-                        
-                        results.append({
-                            "Kode Saham": symbol.replace(".JK", ""),
-                            "Harga Terakhir": f"Rp {last_price:,}",
-                            "Stop Loss (SL)": f"Rp {sl:,}",
-                            "Target 1 (TP1)": f"Rp {tp1:,}",
-                            "Target 2 (TP2)": f"Rp {tp2:,}",
-                            "Target 3 (TP3)": f"Rp {tp3:,}"
-                        })
-                except Exception:
-                    continue
+                    price_range = high_price - low_price
+                    
+                    sl = round(last_price - (price_range * 0.15))
+                    tp1 = round(last_price + (price_range * 0.15))
+                    tp2 = round(last_price + (price_range * 0.30))
+                    tp3 = round(last_price + (price_range * 0.45))
+                    
+                    results.append({
+                        "Kode Saham": symbol,
+                        "Harga Terakhir": f"Rp {last_price:,}",
+                        "Stop Loss (SL)": f"Rp {sl:,}",
+                        "Target 1 (TP1)": f"Rp {tp1:,}",
+                        "Target 2 (TP2)": f"Rp {tp2:,}",
+                        "Target 3 (TP3)": f"Rp {tp3:,}"
+                    })
+            except Exception:
+                continue
 
-            if results:
-                res_df = pd.DataFrame(results)
-                st.subheader(f"Hasil Analisis ({len(results)} Saham)")
-                st.dataframe(res_df, use_container_width=True, hide_index=True)
-            else:
-                st.error("Data tidak ditemukan. Pastikan kode saham benar (contoh: TLKM, ADRO, ICBP).")
+        if results:
+            res_df = pd.DataFrame(results)
+            st.subheader(f"📋 Tabel Screener ({len(results)} Saham)")
+            st.dataframe(res_df, use_container_width=True, hide_index=True)
+
+st.markdown("---")
+
+# --- PROSES TAMPILAN TRADINGVIEW CHART ---
+st.subheader(f"📊 Live TradingView Chart: {active_chart_stock}")
+
+# Kode Widget HTML Resmi TradingView
+tradingview_html = f"""
+<!-- TradingView Widget BEGIN -->
+<div class="tradingview-widget-container" style="height:100%;width:100%">
+  <div id="tradingview_chart" style="height:550px;width:100%"></div>
+  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+  <script type="text/javascript">
+  new TradingView.widget(
+  {{
+    "autosize": true,
+    "symbol": "IDX:{active_chart_stock}",
+    "interval": "D",
+    "timezone": "Asia/Jakarta",
+    "theme": "dark",
+    "style": "1",
+    "locale": "id",
+    "toolbar_bg": "#f1f3f6",
+    "enable_publishing": false,
+    "allow_symbol_change": true,
+    "container_id": "tradingview_chart",
+    "studies": [
+      "RSI@tv-basicstudies",
+      "MASimple@tv-basicstudies",
+      "MACD@tv-basicstudies"
+    ]
+  }}
+  );
+  </script>
+</div>
+<!-- TradingView Widget END -->
+"""
+
+# Menampilkan Widget TradingView di Streamlit
+components.html(tradingview_html, height=570)
