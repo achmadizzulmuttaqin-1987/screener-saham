@@ -1,19 +1,19 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import streamlit.components.v1 as components
+import plotly.graph_objects as go
 
 # 1. Pengaturan Halaman Utama
 st.set_page_config(
-    page_title="Screener & Chart Saham IDX",
+    page_title="Screener & Plotly Chart Saham IDX",
     layout="wide",
     page_icon="📈"
 )
 
-st.title("📈 Screener & Live Chart Saham IDX (Lengkap)")
-st.caption("Aplikasi Analisis Saham Komprehensif: Screener TP/SL + Live TradingView Chart dengan Indikator Lengkap")
+st.title("📈 Screener Saham & Interactive Chart (SL / TP1-TP3)")
+st.caption("Aplikasi Analisis Saham Kompleks: Screener Automatic + Visualisasi Garis Entry, SL, dan TP1–TP3")
 
-# 2. Master Daftar Saham Terpopuler & Syariah (100+ Emiten Utama BEI)
+# 2. Master Daftar Saham Terpopuler & Syariah
 @st.cache_data
 def load_all_tickers():
     base_tickers = [
@@ -41,7 +41,6 @@ all_tickers_raw = load_all_tickers()
 # --- SIDEBAR PENGATURAN ---
 st.sidebar.header("🔍 Opsi Pencarian Saham")
 
-# Mode Pencarian Saham
 search_type = st.sidebar.radio("Metode Input Saham:", ["Pilih dari Daftar Dropdown", "Ketik Kode Bebas (Seluruh BEI)"])
 
 selected_tickers = []
@@ -60,8 +59,10 @@ else:
     if custom_input:
         selected_tickers = [x.strip().upper() for x in custom_input.split(",") if x.strip()]
 
-# Tombol Eksekusi Screener
 run_button = st.sidebar.button("🚀 Jalankan Screener", use_container_width=True)
+
+# Dictionary untuk menyimpan data hasil kalkulasi saham yang diproses
+calculated_stocks = {}
 
 # --- PROSES TABEL SCREENER ---
 st.subheader("📋 Tabel Analisis Screener Saham")
@@ -74,13 +75,12 @@ if run_button or selected_tickers:
             results = []
             
             for symbol in selected_tickers:
-                # Menyesuaikan format untuk yfinance
                 ticker_formatted = f"{symbol}.JK" if not symbol.endswith(".JK") else symbol
                 clean_symbol = symbol.replace(".JK", "").upper()
                 
                 try:
                     stock = yf.Ticker(ticker_formatted)
-                    df = stock.history(period="1mo")
+                    df = stock.history(period="3mo") # Ambil 3 bulan data untuk grafik ideal
                     
                     if not df.empty and len(df) > 1:
                         last_price = round(df['Close'].iloc[-1])
@@ -93,6 +93,15 @@ if run_button or selected_tickers:
                         tp1 = round(last_price + (price_range * 0.15))
                         tp2 = round(last_price + (price_range * 0.30))
                         tp3 = round(last_price + (price_range * 0.45))
+                        
+                        calculated_stocks[clean_symbol] = {
+                            "df": df,
+                            "last_price": last_price,
+                            "sl": sl,
+                            "tp1": tp1,
+                            "tp2": tp2,
+                            "tp3": tp3
+                        }
                         
                         results.append({
                             "Kode Saham": clean_symbol,
@@ -113,54 +122,49 @@ if run_button or selected_tickers:
 
 st.markdown("---")
 
-# --- PROSES TAMPILAN TRADINGVIEW CHART ---
+# --- PROSES TAMPILAN PLOTLY CHART DENGAN GARIS TP & SL ---
 st.sidebar.markdown("---")
-st.sidebar.header("📊 Interactive Chart")
+st.sidebar.header("📊 Interactive Chart SL/TP")
 
-# Opsi Pilihan Chart Berdasarkan Saham yang Sedang Dilihat
-active_chart_stock = "TLKM"
-if selected_tickers:
+if calculated_stocks:
     active_chart_stock = st.sidebar.selectbox(
-        "Pilih Saham untuk Live Chart:",
-        options=selected_tickers,
+        "Pilih Saham untuk Visualisasi Chart & Garis SL/TP:",
+        options=list(calculated_stocks.keys()),
         index=0
     )
+    
+    stock_data = calculated_stocks[active_chart_stock]
+    df_chart = stock_data["df"]
+    
+    st.subheader(f"📊 Chart Candlestick + Level TP/SL: {active_chart_stock}")
+    
+    # Buat Chart Candlestick
+    fig = go.Figure(data=[go.Candlestick(
+        x=df_chart.index,
+        open=df_chart['Open'],
+        high=df_chart['High'],
+        low=df_chart['Low'],
+        close=df_chart['Close'],
+        name="Harga Saham"
+    )])
+    
+    # Tambahkan Garis Horizontal (Entry, SL, TP1, TP2, TP3)
+    fig.add_hline(y=stock_data["last_price"], line_dash="dash", line_color="blue", annotation_text=f"Entry: Rp {stock_data['last_price']:,}", annotation_position="top left")
+    fig.add_hline(y=stock_data["sl"], line_dash="solid", line_color="red", annotation_text=f"SL: Rp {stock_data['sl']:,}", annotation_position="bottom left")
+    fig.add_hline(y=stock_data["tp1"], line_dash="solid", line_color="lightgreen", annotation_text=f"TP1: Rp {stock_data['tp1']:,}", annotation_position="top right")
+    fig.add_hline(y=stock_data["tp2"], line_dash="solid", line_color="green", annotation_text=f"TP2: Rp {stock_data['tp2']:,}", annotation_position="top right")
+    fig.add_hline(y=stock_data["tp3"], line_dash="solid", line_color="darkgreen", annotation_text=f"TP3: Rp {stock_data['tp3']:,}", annotation_position="top right")
+    
+    # Pengaturan Tampilan Grafik (Dark Theme & Layout Spacing)
+    fig.update_layout(
+        template="plotly_dark",
+        height=600,
+        xaxis_rangeslider_visible=False,
+        title=f"Analisis Candlestick {active_chart_stock} (3 Bulan)",
+        yaxis_title="Harga (Rp)",
+        xaxis_title="Tanggal"
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
 else:
-    active_chart_stock = st.sidebar.text_input("Ketik Kode Saham untuk Chart:", "TLKM").upper()
-
-st.subheader(f"📊 Live TradingView Chart: {active_chart_stock}")
-
-# Widget HTML Resmi TradingView
-tradingview_html = f"""
-<!-- TradingView Widget BEGIN -->
-<div class="tradingview-widget-container" style="height:100%;width:100%">
-  <div id="tradingview_chart" style="height:550px;width:100%"></div>
-  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-  <script type="text/javascript">
-  new TradingView.widget(
-  {{
-    "autosize": true,
-    "symbol": "IDX:{active_chart_stock}",
-    "interval": "D",
-    "timezone": "Asia/Jakarta",
-    "theme": "dark",
-    "style": "1",
-    "locale": "id",
-    "toolbar_bg": "#f1f3f6",
-    "enable_publishing": false,
-    "allow_symbol_change": true,
-    "container_id": "tradingview_chart",
-    "studies": [
-      "RSI@tv-basicstudies",
-      "MASimple@tv-basicstudies",
-      "MACD@tv-basicstudies"
-    ]
-  }}
-  );
-  </script>
-</div>
-<!-- TradingView Widget END -->
-"""
-
-# Menampilkan Widget TradingView di Streamlit
-components.html(tradingview_html, height=570)
+    st.info("Jalankan screener terlebih dahulu untuk melihat grafik candlestick beserta garis TP & SL.")
